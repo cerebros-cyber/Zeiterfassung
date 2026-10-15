@@ -80,6 +80,7 @@ body {
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
+a { color: var(--accent-strong); }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; letter-spacing: -.01em; }
 h1 { font-size: 2rem; font-weight: 700; line-height: 1.1; }
@@ -1604,7 +1605,7 @@ function b64url(bytes) { return btoa(String.fromCharCode(...new Uint8Array(bytes
 function randomStr(n) { const a = new Uint8Array(n); crypto.getRandomValues(a); return b64url(a).slice(0, n); }
 
 async function msConnect() {
-  if (!clientId()) { toast('OneDrive ist noch nicht eingerichtet: Client-ID fehlt (siehe „Mehr → Erweitert“).'); return; }
+  if (!clientId()) { setupSheet(); return; }
   if (!window.crypto || !crypto.subtle || location.protocol !== 'https:') { toast('Die Anmeldung funktioniert nur in der installierten App (https).'); return; }
   const verifier = randomStr(64), state = randomStr(20);
   SY.pkce = { verifier, state }; saveSync();
@@ -1767,8 +1768,8 @@ function storageCard() {
   } else {
     body = `
       <p class="muted small">Mit OneDrive werden deine Zeiten automatisch zwischen Handy, Tablet und Computer abgeglichen. Anmeldung mit deinem Microsoft-Konto (privat oder Schule).</p>
-      <button class="btn primary block" data-a="msConnect" ${cid ? '' : 'disabled'}>Mit OneDrive verbinden</button>
-      ${cid ? '' : '<p class="muted small">Zum Verbinden fehlt noch die Client-ID der App-Registrierung (siehe „Erweitert“).</p>'}
+      <button class="btn primary block" data-a="msConnect">Mit OneDrive verbinden</button>
+      ${cid ? '' : '<p class="muted small">Beim ersten Mal führt dich die App durch die einmalige Einrichtung bei Microsoft.</p>'}
       <p class="muted small">iCloud lässt sich in Web-Apps nicht direkt anbinden. Du kannst aber unten jederzeit eine Sicherung in iCloud Drive ablegen.</p>`;
   }
   return `<section class="card">
@@ -1782,13 +1783,43 @@ function storageCard() {
       </div></details>
   </section>`;
 }
+/* Einmalige Einrichtung: App bei Microsoft registrieren und Client-ID eintragen */
+function setupSheet() {
+  const uri = redirectUri();
+  openSheet(`
+    <p class="eyebrow">OneDrive einrichten · einmalig</p>
+    <h2 id="sheet-title">App bei Microsoft registrieren</h2>
+    <p class="muted small">Damit die App auf dein OneDrive zugreifen darf, braucht sie eine kostenlose Registrierung bei Microsoft. Am einfachsten am Computer:</p>
+    <ol class="steps">
+      <li><div><a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade" target="_blank" rel="noopener"><b>entra.microsoft.com</b></a> öffnen und mit deinem Microsoft-Konto anmelden → <b>App-Registrierungen</b> → <b>Neue Registrierung</b>.</div></li>
+      <li><div>Name: <b>NGG Zeiterfassung</b>. Unterstützte Kontotypen: <b>„Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten“</b>.</div></li>
+      <li><div>Umleitungs-URI: Plattform <b>„Single-Page-Anwendung (SPA)“</b> wählen und diese Adresse eintragen:
+        <code style="display:block;word-break:break-all;margin-top:6px;padding:8px;background:var(--surface-2);border-radius:8px">${esc(uri)}</code>
+        <button type="button" class="linkbtn small" data-s="copy">Adresse kopieren</button></div></li>
+      <li><div><b>Registrieren</b> klicken und die <b>Anwendungs-ID (Client-ID)</b> von der Übersichtsseite kopieren.</div></li>
+    </ol>
+    <label class="f" for="setup-cid">Anwendungs-ID (Client-ID)
+      <input type="text" id="setup-cid" value="${esc(SY.clientId || '')}" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
+    <div class="sheet-actions"><button class="btn" data-s="cancel">Später</button><button class="btn primary" data-s="go">Speichern & verbinden</button></div>`, (b) => {
+    b.onclick = async (ev) => {
+      const a = ev.target.closest('[data-s]'); if (!a) return;
+      if (a.dataset.s === 'copy') { try { await navigator.clipboard.writeText(uri); toast('Adresse kopiert'); } catch (e) { toast('Bitte die Adresse markieren und kopieren.'); } }
+      if (a.dataset.s === 'cancel') closeSheet();
+      if (a.dataset.s === 'go') {
+        const id = $('#setup-cid', b).value.trim();
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return toast('Das sieht nicht wie eine Client-ID aus (Format 8-4-4-4-12 Zeichen).');
+        SY.clientId = id; saveSync(); closeSheet(); msConnect();
+      }
+    };
+  });
+}
 function welcomeSheet() {
   const cid = clientId();
   openSheet(`
     <p class="eyebrow">Willkommen</p>
     <h2 id="sheet-title">Wo sollen deine Zeiten gespeichert werden?</h2>
-    <button class="btn primary block big" data-s="od" ${cid ? '' : 'disabled'}>Mit OneDrive verbinden</button>
-    <p class="muted small">Automatischer Abgleich zwischen all deinen Geräten. ${cid ? '' : '<b>Noch nicht eingerichtet</b> – die App-Registrierung fehlt noch; du kannst OneDrive später unter „Mehr“ verbinden.'}</p>
+    <button class="btn primary block big" data-s="od">Mit OneDrive verbinden</button>
+    <p class="muted small">Automatischer Abgleich zwischen all deinen Geräten.${cid ? '' : ' Beim ersten Mal ist eine einmalige Einrichtung bei Microsoft nötig (ca. 5 Minuten).'}</p>
     <button class="btn block" data-s="local">Nur auf diesem Gerät</button>
     <p class="muted small">Die Daten bleiben in diesem Browser. Sicherungen kannst du jederzeit als Datei ablegen, z. B. in iCloud Drive.</p>`, (b) => {
     b.onclick = (ev) => {

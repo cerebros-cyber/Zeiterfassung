@@ -1,4 +1,4 @@
-# NGG Zeiterfassung
+# NGG Zeiterfassung · Campus Glienicke
 
 Web-App (PWA) für Lehrkräfte zum Erfassen der Arbeitszeit auf dem Handy.
 Adresse nach dem Veröffentlichen: **https://cerebros-cyber.github.io/Zeiterfassung/**
@@ -9,6 +9,7 @@ Adresse nach dem Veröffentlichen: **https://cerebros-cyber.github.io/Zeiterfass
 - **Zeiten nachtragen**: Datum, Beginn, Ende (oder Dauer per Schnellwahl), Label, Notiz.
 - **Faktor**: Jede Zeit hat einen Haken „Faktor anrechnen“ (standardmäßig aus). Ist er gesetzt, zählt die Zeit × 1,6 (Wert unter „Mehr“ einstellbar). Auch für Stunden im Stundenplan einstellbar.
 - **Stundenplan**: feste Stunden per Stundenraster oder freien Zeiten, optional mit Gültigkeit (z. B. Halbjahr). Automatisch bis heute oder für einen Zeitraum eintragen. Ferien (openholidaysapi.org), Feiertage (lokal berechnet) und eigene freie Tage werden übersprungen. Einzeln gelöschte Stunden kommen nicht wieder.
+- **Löschen nach Zeitraum**: Unter „Einträge“ → „Löschen …“ alle Einträge eines Zeitraums löschen – wahlweise nur bestimmte Labels und nur Stundenplan- oder eigene Einträge, mit Rückgängig.
 - **Labels**: Unterricht, Vertretung, Unterrichtsvor- und Nachbereitung, Korrekturen, Exkursionen – plus eigene mit Farbe.
 - **Auswertung**: Woche, Monat, Schuljahr oder freier Zeitraum, Labels frei wählbar; Summe, Durchschnitte, Diagramm, Aufteilung nach Label, Faktor-Anteil, Unterrichtsstunden à 45 min; CSV-Export.
 - **Speicher**: lokal im Browser, optional **Abgleich über OneDrive** (Datei `Apps/<App-Name>/zeiterfassung.json`). Zusätzlich Sicherung als Datei (z. B. in iCloud Drive).

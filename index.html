@@ -12,13 +12,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Zeiterfassung">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="icon" href="icons/favicon-64.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Barlow+Semi+Condensed:wght@500;600;700;800&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Arimo:wght@400;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
 <style>
-/* Layout: eine Spalte, NGG-Farben (Rot #DC3545, Dunkel #1D1D1B, Grautöne), Navigation unten in Daumenreichweite, Timer als Hauptobjekt. */
+/* Layout: eine Spalte, Farben aus dem Campus-Glienicke-Logo (Rot #DC3544, Dunkel #1D1D1B, Grautöne), Navigation unten in Daumenreichweite, Timer als Hauptobjekt. */
 :root {
   --bg: #f3f3f1;
   --surface: #ffffff;
@@ -27,7 +27,7 @@
   --fg: #1d1d1b;              /* NGG Dunkel */
   --fg-2: #5a5a5a;            /* NGG Grau dunkel */
   --fg-3: #77777a;
-  --accent: #dc3545;          /* NGG Rot */
+  --accent: #dc3544;          /* NGG Rot */
   --accent-strong: #b02a37;
   --accent-fg: #ffffff;
   --accent-soft: #fbe2e4;
@@ -41,7 +41,8 @@
   --warn: #8a5a00;
   --warn-soft: #fbedc9;
   --shadow: 0 1px 2px rgba(29, 29, 27, .06), 0 8px 24px rgba(29, 29, 27, .08);
-  --f-display: "Barlow Semi Condensed", "Avenir Next Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-display: "Arimo", Arial, "Helvetica Neue", Helvetica, sans-serif;   /* wie die Logo-Schrift */
+  --safe-t: env(safe-area-inset-top, 0px);
   --f-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --r: 12px;
   --r-s: 8px;
@@ -68,6 +69,13 @@
   --danger: #f08a80; --danger-soft: #3d1f1c; --warn: #f0c062; --warn-soft: #3a2d10;
   --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.3);
   color-scheme: dark;
+}
+
+/* Als installierte App legt iOS/iPadOS 26 hinter Uhrzeit und Akku einen weichgezeichneten Schleier,
+   der nach unten ausläuft und sich nicht abschalten lässt. Deshalb bleibt oben ein einfarbiger Streifen frei;
+   Logo und Inhalt beginnen darunter im scharfen Bereich (wie im Cerebros Soundboard). */
+@media (display-mode: standalone) {
+  :root { --safe-t: calc(max(env(safe-area-inset-top, 0px), 24px) + 14px); }
 }
 
 * { box-sizing: border-box; }
@@ -110,11 +118,12 @@ p { margin: 0; }
 .stack { display: grid; gap: 8px; }
 
 /* Kopfband im NGG-Stil */
-.brand { background: var(--surface); border-bottom: 3px solid var(--accent); padding-top: env(safe-area-inset-top, 0px); }
-.brand-in { max-width: 600px; margin: 0 auto; display: flex; align-items: center; gap: 10px; min-height: 48px;
+.brand { position: sticky; top: 0; z-index: 15; background: var(--surface); border-bottom: 3px solid var(--accent); padding-top: var(--safe-t); }
+.brand-in { max-width: 600px; margin: 0 auto; display: flex; align-items: center; gap: 12px; min-height: 56px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
-.brand-mark { background: var(--accent); color: #fff; font-family: var(--f-display); font-weight: 800; font-size: .95rem; letter-spacing: .06em; padding: 3px 7px 2px; border-radius: 3px; }
-.brand-name { font-family: var(--f-display); font-weight: 700; font-size: 1.08rem; letter-spacing: .01em; }
+.brand-logo { width: 40px; height: 40px; border-radius: 6px; display: block; flex: none; }
+.brand-name { font-family: var(--f-display); font-weight: 700; font-size: 1.1rem; line-height: 1.1; }
+.brand-name small { display: block; font-weight: 400; font-size: .75rem; color: var(--fg-3); }
 .sync { display: inline-flex; align-items: center; gap: 6px; font-size: .8rem; font-weight: 700; color: var(--fg-3); background: none; border: 0; padding: 4px; }
 .sync i { width: 8px; height: 8px; border-radius: 50%; background: var(--fg-3); }
 .sync.ok i { background: var(--ok); }
@@ -330,7 +339,7 @@ details[open].card summary::after { content: "▴"; }
 </style>
 </head>
 <body>
-<header class="brand"><div class="brand-in"><span class="brand-mark" aria-hidden="true">NGG</span><span class="brand-name">Zeiterfassung</span><span class="grow"></span><span id="sync-pill"></span></div></header>
+<header class="brand"><div class="brand-in"><img class="brand-logo" src="icons/logo-128.png" alt="Campus Glienicke" width="40" height="40"><span class="brand-name">Zeiterfassung<small>Campus Glienicke</small></span><span class="grow"></span><span id="sync-pill"></span></div></header>
 <main class="app" id="view" aria-live="polite"></main>
 
 <nav class="nav" aria-label="Hauptnavigation"><div class="nav-in" id="nav"></div></nav>
@@ -423,6 +432,7 @@ const ICON = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
   right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="aus Stundenplan"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>',
 };
 
@@ -817,7 +827,8 @@ function viewEintraege() {
   }
   return `
     <header class="top"><div><p class="eyebrow">Einträge</p><h1>Woche</h1></div>
-      ${S.slots.length ? `<button class="btn sm" data-a="fillWeek" data-from="${mon}" data-to="${sun}">${ICON.cal} Stundenplan eintragen</button>` : ''}</header>
+      <div class="row">${S.slots.length ? `<button class="btn sm" data-a="fillWeek" data-from="${mon}" data-to="${sun}">${ICON.cal} Stundenplan eintragen</button>` : ''}
+        <button class="btn sm" data-a="bulkDelete" data-from="${mon}" data-to="${sun}">${ICON.trash} Löschen …</button></div></header>
     <div class="weeknav">
       <button class="iconbtn" data-a="week" data-d="-1" aria-label="Vorige Woche">${ICON.left}</button>
       <div class="mid"><b>KW ${isoWeek(mon)}</b><span class="muted small num">${fmtDateShort(mon)} – ${fmtDate(sun)}</span></div>
@@ -1095,7 +1106,8 @@ function viewMehr() {
         <button class="btn" data-a="importPaste">Text einfügen</button>
       </div>
       <p class="muted small">${S.entries.length} Einträge · ${S.slots.length} Stunden im Stundenplan · ${S.labels.length} Labels</p>
-      <button class="btn danger sm" data-a="wipe">Alle Daten löschen</button>
+      <div class="row"><button class="btn sm" data-a="bulkDelete">Einträge im Zeitraum löschen …</button>
+        <button class="btn danger sm" data-a="wipe">Alle Daten löschen</button></div>
     </section>
     <p class="muted small" style="text-align:center">Zeiterfassung für Lehrkräfte · Daten bleiben auf deinem Gerät</p>`;
 }
@@ -1323,6 +1335,84 @@ function fillSheet(from, to) {
   });
 }
 
+/* Einträge in einem Zeitraum löschen, wahlweise nur bestimmte Labels */
+function bulkDeleteSheet(from, to) {
+  const mon = monday(today());
+  from = from || mon; to = to || addDays(mon, 6);
+  const used = new Set(S.entries.map((e) => e.labelId));
+  const labels = S.labels.filter((l) => !l.hidden || used.has(l.id));
+  const sel = new Set(labels.map((l) => l.id));
+  let src = 'all';
+  openSheet(`
+    <h2 id="sheet-title">Einträge löschen</h2>
+    <div class="grid2">
+      <label class="f" for="d-from">Von<input type="date" id="d-from" value="${from}"></label>
+      <label class="f" for="d-to">Bis<input type="date" id="d-to" value="${to}"></label></div>
+    <div class="chips">
+      <button type="button" class="chip" data-s="preset" data-p="week">Diese Woche</button>
+      <button type="button" class="chip" data-s="preset" data-p="month">Dieser Monat</button>
+      <button type="button" class="chip" data-s="preset" data-p="sy">Ganzes Schuljahr</button></div>
+    <div class="stack">
+      <div class="section-head"><span class="tf-label">Labels</span>
+        <div class="row"><button type="button" class="linkbtn small" data-s="all">Alle</button><button type="button" class="linkbtn small" data-s="none">Keine</button></div></div>
+      <div class="chips">${labels.map((l) => `<button type="button" class="chip" data-s="lbl" data-id="${esc(l.id)}" aria-pressed="true"><span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`).join('')}</div></div>
+    <div class="stack"><span class="tf-label">Herkunft</span>
+      <div class="seg" id="d-src">
+        <button type="button" data-s="src" data-v="all" aria-pressed="true">Alle</button>
+        <button type="button" data-s="src" data-v="plan" aria-pressed="false">Stundenplan</button>
+        <button type="button" data-s="src" data-v="own" aria-pressed="false">Eigene</button></div></div>
+    <div class="banner" id="d-sum"></div>
+    <div class="sheet-actions"><button class="btn" data-s="cancel">Abbrechen</button><button class="btn danger" data-s="go" id="d-go">Löschen</button></div>`, (b) => {
+    const match = () => {
+      let f = $('#d-from', b).value, t = $('#d-to', b).value;
+      if (!f || !t) return [];
+      if (f > t) [f, t] = [t, f];
+      return S.entries.filter((e) => e.date >= f && e.date <= t && sel.has(e.labelId)
+        && (src === 'all' || (src === 'plan' ? e.source === 'plan' : e.source !== 'plan')));
+    };
+    const upd = () => {
+      const m = match();
+      $('#d-sum', b).innerHTML = m.length
+        ? `<b>${m.length} ${m.length === 1 ? 'Eintrag' : 'Einträge'}</b> (${fmtDur(sumMin(m))}) werden gelöscht.`
+        : 'Keine passenden Einträge.';
+      $('#d-go', b).disabled = !m.length;
+      $('#d-go', b).textContent = m.length ? `${m.length} löschen` : 'Löschen';
+    };
+    upd();
+    b.onchange = upd; b.oninput = upd;
+    b.onclick = (ev) => {
+      const a = ev.target.closest('[data-s]'); if (!a) return;
+      const act = a.dataset.s;
+      if (act === 'preset') {
+        const t = today(), d = pd(t); let f, to2;
+        if (a.dataset.p === 'week') { f = monday(t); to2 = addDays(f, 6); }
+        if (a.dataset.p === 'month') { f = iso(new Date(d.getFullYear(), d.getMonth(), 1)); to2 = iso(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
+        if (a.dataset.p === 'sy') { const y = d.getMonth() >= 7 ? d.getFullYear() : d.getFullYear() - 1; f = `${y}-08-01`; to2 = `${y + 1}-07-31`; }
+        $('#d-from', b).value = f; $('#d-to', b).value = to2;
+      }
+      if (act === 'lbl') { sel.has(a.dataset.id) ? sel.delete(a.dataset.id) : sel.add(a.dataset.id); a.setAttribute('aria-pressed', sel.has(a.dataset.id)); }
+      if (act === 'all' || act === 'none') { labels.forEach((l) => (act === 'all' ? sel.add(l.id) : sel.delete(l.id))); b.querySelectorAll('[data-s="lbl"]').forEach((x) => x.setAttribute('aria-pressed', act === 'all')); }
+      if (act === 'src') { src = a.dataset.v; b.querySelectorAll('[data-s="src"]').forEach((x) => x.setAttribute('aria-pressed', x.dataset.v === src)); }
+      if (act === 'cancel') return closeSheet();
+      if (act === 'go') {
+        const m = match(); if (!m.length) return;
+        const ids = new Set(m.map((e) => e.id));
+        const keys = m.filter((e) => e.planKey).map((e) => e.planKey);
+        S.entries = S.entries.filter((e) => !ids.has(e.id));
+        S.planSkip.push(...keys);     // gelöschte Stundenplan-Zeiten nicht erneut eintragen
+        save(); closeSheet(); render();
+        toast(`${m.length} ${m.length === 1 ? 'Eintrag' : 'Einträge'} gelöscht`, () => {
+          const ks = new Set(keys);
+          S.entries.push(...m); S.planSkip = S.planSkip.filter((k) => !ks.has(k));
+          save(); render();
+        });
+        return;
+      }
+      upd();
+    };
+  });
+}
+
 /* Label anlegen / bearbeiten */
 function labelSheet(label, after) {
   const isNew = !label;
@@ -1497,6 +1587,7 @@ const actions = {
   week: (a) => { const d = +a.dataset.d; ui.weekOff = d === 0 ? 0 : ui.weekOff + d; render(); },
   fillWeek: (a) => fillSheet(a.dataset.from, a.dataset.to),
   fillRange: () => fillSheet(),
+  bulkDelete: (a) => bulkDeleteSheet(a.dataset.from, a.dataset.to),
   planDay: (a) => { ui.planDay = +a.dataset.d; render(); },
   newSlot: () => slotSheet(null),
   editSlot: (a) => slotSheet(S.slots.find((s) => s.id === a.dataset.id)),

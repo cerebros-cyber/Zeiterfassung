@@ -1,7 +1,7 @@
 # NGG Zeiterfassung
 
 Web-App (PWA) für Lehrkräfte zum Erfassen der Arbeitszeit auf dem Handy.
-Adresse nach dem Veröffentlichen: **https://cerebros-cyber.github.io/zeiterfassung/**
+Adresse nach dem Veröffentlichen: **https://cerebros-cyber.github.io/Zeiterfassung/**
 
 ## Funktionen
 
@@ -25,7 +25,7 @@ Die App braucht eine kostenlose App-Registrierung bei Microsoft:
 
 1. Unter https://entra.microsoft.com (oder https://portal.azure.com) mit dem Microsoft-Konto anmelden → **App-Registrierungen** → **Neue Registrierung**.
 2. Name: z. B. `NGG Zeiterfassung`. Kontotypen: **„Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten“**.
-3. Umleitungs-URI: Plattform **„Single-Page-Anwendung (SPA)“**, Adresse `https://cerebros-cyber.github.io/zeiterfassung/`.
+3. Umleitungs-URI: Plattform **„Single-Page-Anwendung (SPA)“**, Adresse `https://cerebros-cyber.github.io/Zeiterfassung/`.
 4. **Registrieren** → die **Anwendungs-ID (Client-ID)** kopieren.
 5. Die ID in `index.html` bei `ONEDRIVE_CLIENT_ID` eintragen – oder in der App unter „Mehr → Speicherort & Abgleich → Erweitert“.
 

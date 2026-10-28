@@ -166,11 +166,11 @@ p { margin: 0; }
 
 /* Formulare */
 label.f { display: grid; gap: 4px; font-size: .85rem; font-weight: 700; color: var(--fg-2); min-width: 0; }
-input[type=text], input[type=date], input[type=time], input[type=number], select, textarea {
+input[type=text], input[type=date], input[type=month], input[type=time], input[type=number], select, textarea {
   width: 100%; min-height: 46px; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--line);
   background: var(--surface); font-size: 1rem; font-weight: 400; color: var(--fg);
 }
-input[type=time], input[type=date] { font-variant-numeric: tabular-nums; }
+input[type=time], input[type=date], input[type=month] { font-variant-numeric: tabular-nums; }
 textarea { min-height: 120px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8rem; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
@@ -432,6 +432,7 @@ const ICON = {
   plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
   left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
   right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
   cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="aus Stundenplan"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>',
 };
@@ -454,6 +455,8 @@ function defaults() {
     onboarded: false,
     welcomed: false,
     factor: DEFAULT_FACTOR,
+    teacher: '',       // Name für das Verrechnungsstunden-Formular
+    exportPrefs: null, // zuletzt gewählte Export-Optionen (nur lokal)
     del: {},           // Löschmarken für den Abgleich {id: Zeitpunkt}
     su: 0,             // Zeitpunkt der letzten Einstellungsänderung
     runU: 0,           // Zeitpunkt der letzten Timer-Änderung
@@ -483,7 +486,7 @@ function persist() {
 /* Änderungsverfolgung für den Abgleich: Jede Speicherung vergleicht mit dem letzten Stand
    und versieht geänderte Einträge mit einem Zeitstempel bzw. gelöschte mit einer Löschmarke. */
 const SYNC_COLLS = ['entries', 'slots', 'labels', 'freeDays'];
-const SETTINGS_KEYS = ['state', 'periods', 'plan', 'factor'];
+const SETTINGS_KEYS = ['state', 'periods', 'plan', 'factor', 'teacher'];
 let snap = null;
 const strip = (x) => { const { u, ...r } = x; return JSON.stringify(r); };
 function takeSnap() {
@@ -1000,6 +1003,7 @@ function viewAuswertung() {
       </div>`).join('')}</div>
       ${ustdMin && perLabel.length > 1 ? `<p class="muted small">Unterricht und Vertretung zusammen: ${fmtDur(ustdMin)} (${fmtDec(ustdRaw / 45 * 60, 1)} UStd). Alles andere: ${fmtDur(total - ustdMin)}.</p>` : ''}
     </section>` : ''}
+    <button class="btn primary block" data-a="verrechnung">${ICON.doc}<span>Verrechnungsstunden als PDF …</span></button>
     <div class="grid2">
       <button class="btn" data-a="csv">CSV exportieren</button>
       <button class="btn" data-a="csvCopy">CSV kopieren</button>
@@ -1480,6 +1484,195 @@ function freeSheet() {
   });
 }
 
+
+/* ---------- Export: Formular „Verrechnungsstunden“ (ausfüllbares PDF der Schule) ---------- */
+const FORM_ROWS = 15;
+// App-Label → Eintrag in der Kategorie-Liste des Formulars (sonst wird der Label-Name eingetragen)
+const FORM_CATEGORY = { exkursionen: 'Schulfahrt / Exkursion', vertretung: 'Vertretung / Aufsicht' };
+let pdfLibPromise = null;
+function loadPdfLib() {
+  if (window.PDFLib) return Promise.resolve(window.PDFLib);
+  if (!pdfLibPromise) {
+    pdfLibPromise = new Promise((resolve, reject) => {
+      const sc = document.createElement('script');
+      sc.src = 'vendor/pdf-lib.min.js';
+      sc.onload = () => resolve(window.PDFLib);
+      sc.onerror = () => { pdfLibPromise = null; reject(new Error('PDF-Bibliothek konnte nicht geladen werden')); };
+      document.head.append(sc);
+    });
+  }
+  return pdfLibPromise;
+}
+// Nur Zeichen, die die Standardschrift im PDF darstellen kann
+const pdfText = (t) => String(t ?? '').replace(/[^\x20-\x7E\xA0-\xFF–—„“”‚‘’…€•]/g, '').trim();
+const fmtStd = (min) => (Math.round(min / 60 * 100) / 100).toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+function schoolYearOf(month) {   // "2026-10" → "2026/27"
+  const [y, m] = month.split('-').map(Number);
+  const a = m >= 8 ? y : y - 1;
+  return `${a}/${String(a + 1).slice(2)}`;
+}
+function verrechnungRows(month, labelIds, group, useFactor) {
+  const sel = new Set(labelIds);
+  const list = S.entries.filter((e) => e.date.slice(0, 7) === month && sel.has(e.labelId))
+    .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  const minutes = (e) => (useFactor ? cnt(e) : dur(e));
+  const rows = [];
+  if (group === 'day') {
+    const map = new Map();
+    for (const e of list) {
+      const k = e.date + '|' + e.labelId;
+      if (!map.has(k)) { map.set(k, { date: e.date, labelId: e.labelId, start: e.start, end: e.end, min: 0, notes: [], f: false }); rows.push(map.get(k)); }
+      const r = map.get(k);
+      r.min += minutes(e);
+      if (e.start < r.start) r.start = e.start;
+      if (e.end > r.end) r.end = e.end;
+      if (e.note && !r.notes.includes(e.note)) r.notes.push(e.note);
+      if (useFactor && e.f) r.f = true;
+    }
+  } else {
+    for (const e of list) rows.push({ date: e.date, labelId: e.labelId, start: e.start, end: e.end, min: minutes(e), notes: e.note ? [e.note] : [], f: useFactor && !!e.f });
+  }
+  return rows.map((r) => {
+    const l = labelById(r.labelId);
+    let was = r.notes.join('; ') || l.name;
+    if (r.f) was += ` (Faktor ${fmtFactor()})`;
+    return { datum: fmtDate(r.date), kat: FORM_CATEGORY[r.labelId] || l.name, was, von: r.start, bis: r.end, min: r.min };
+  });
+}
+async function buildVerrechnungPdf({ month, rows, teacher, remark }) {
+  const PDFLib = await loadPdfLib();
+  const res = await fetch('vorlagen/verrechnungsstunden.pdf');
+  if (!res.ok) throw new Error('Formular-Vorlage nicht gefunden');
+  const tpl = await res.arrayBuffer();
+  const [y, m] = month.split('-').map(Number);
+  const chunks = [];
+  for (let i = 0; i < rows.length; i += FORM_ROWS) chunks.push(rows.slice(i, i + FORM_ROWS));
+  if (!chunks.length) chunks.push([]);
+  const totalMin = rows.reduce((a, r) => a + r.min, 0);
+  const docs = [];
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const doc = await PDFLib.PDFDocument.load(tpl);
+    const helv = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+    const form = doc.getForm();
+    // Text so setzen, dass er ins Feld passt (Schrift notfalls verkleinern)
+    const put = (name, text, max = 9) => {
+      const t = pdfText(text);
+      let f;
+      try { f = form.getField(name); } catch (e) { return; }
+      const w = f.acroField.getWidgets()[0].getRectangle().width - 4;
+      let size = max;
+      while (size > 5 && helv.widthOfTextAtSize(t, size) > w) size -= 0.5;
+      if (f instanceof PDFLib.PDFDropdown) { f.setFontSize(size); f.select(t || ' '); }
+      else { f.setFontSize(size); f.setText(t); }
+    };
+    put('Lehrkraft', teacher, 11); put('Schuljahr', schoolYearOf(month), 11); put('Monat', `${MONTHS[m - 1]} ${y}`, 11);
+    let sum = 0;
+    chunks[ci].forEach((r, i) => {
+      const n = i + 1;
+      put('datum_' + n, r.datum); put('kat_' + n, r.kat); put('was_' + n, r.was);
+      put('von_' + n, r.von); put('bis_' + n, r.bis);
+      put('dauer_' + n, fmtStd(r.min)); put('netto_' + n, fmtStd(r.min));
+      sum += r.min;
+    });
+    put('summe_dauer', fmtStd(sum)); put('summe_netto', fmtStd(sum));
+    put('Bemerkung_1', remark);
+    if (chunks.length > 1) put('Bemerkung_2', `Blatt ${ci + 1} von ${chunks.length} · Gesamtsumme aller Blätter: ${fmtStd(totalMin)} Std.`);
+    if (chunks.length > 1) {
+      // Mehrere Blätter lassen sich nicht als ein Formular zusammenführen → feste Seiten erzeugen
+      for (const b of ['btn_loeschen_0', 'btn_speichern_0', 'btn_drucken_0']) { try { form.removeField(form.getButton(b)); } catch (e) { /* egal */ } }
+      form.updateFieldAppearances(helv);
+      form.flatten();
+    }
+    docs.push(doc);
+  }
+  if (docs.length === 1) return docs[0].save();
+  const out = await PDFLib.PDFDocument.create();
+  for (const d of docs) { const [pg] = await out.copyPages(d, [0]); out.addPage(pg); }
+  out.setTitle('Verrechnungsstunden – Neues Gymnasium Glienicke');
+  return out.save();
+}
+function verrechnungSheet() {
+  const t = today();
+  const r = ui.rep;
+  let month = t.slice(0, 7);
+  if (r.mode === 'month') { const [from] = repRange(); month = from.slice(0, 7); }
+  const prefs = S.exportPrefs || {};
+  const used = new Set(S.entries.map((e) => e.labelId));
+  const labels = S.labels.filter((l) => !l.hidden || used.has(l.id));
+  const sel = new Set(prefs.labels ? prefs.labels.filter((id) => labels.some((l) => l.id === id)) : labels.filter((l) => l.id !== 'unterricht').map((l) => l.id));
+  let group = prefs.group || 'single';
+  let ready = null;
+  openSheet(`
+    <p class="eyebrow">Export</p>
+    <h2 id="sheet-title">Verrechnungsstunden (PDF)</h2>
+    <p class="muted small">Füllt das Formular „Verrechnungsstunden“ für einen Monat aus. Gegenzurechnende Zeiten trägst du bei Bedarf danach im PDF ein.</p>
+    <div class="grid2">
+      <label class="f" for="x-month">Monat<input type="month" id="x-month" value="${month}"></label>
+      <label class="f" for="x-teacher">Lehrkraft<input type="text" id="x-teacher" value="${esc(S.teacher || '')}" placeholder="Vor- und Nachname" autocomplete="name"></label>
+    </div>
+    <div class="stack">
+      <div class="section-head"><span class="tf-label">Kategorien (Labels)</span>
+        <div class="row"><button type="button" class="linkbtn small" data-s="all">Alle</button><button type="button" class="linkbtn small" data-s="none">Keine</button></div></div>
+      <div class="chips">${labels.map((l) => `<button type="button" class="chip" data-s="lbl" data-id="${esc(l.id)}" aria-pressed="${sel.has(l.id)}"><span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`).join('')}</div></div>
+    <div class="stack"><span class="tf-label">Zeilen</span>
+      <div class="seg">
+        <button type="button" data-s="grp" data-v="single" aria-pressed="${group === 'single'}">Jeder Eintrag</button>
+        <button type="button" data-s="grp" data-v="day" aria-pressed="${group === 'day'}">Pro Tag & Label</button></div></div>
+    <label class="switch" for="x-factor"><span><b>Faktor ${fmtFactor()} einrechnen</b><br><span class="muted small">Bei Einträgen mit gesetztem Faktor-Haken</span></span>
+      <input type="checkbox" id="x-factor" ${prefs.factor === false ? '' : 'checked'}></label>
+    <label class="f" for="x-remark"><span>Bemerkung <span class="muted">(optional)</span></span><input type="text" id="x-remark" autocomplete="off"></label>
+    <div class="banner info" id="x-sum"></div>
+    <div class="sheet-actions"><button class="btn" data-s="cancel">Abbrechen</button><button class="btn primary" data-s="go" id="x-go">PDF erstellen</button></div>`, (b) => {
+    const current = () => {
+      const m = $('#x-month', b).value || month;
+      return { month: m, rows: verrechnungRows(m, [...sel], group, $('#x-factor', b).checked) };
+    };
+    const upd = () => {
+      if (ready) { ready = null; $('#x-go', b).dataset.s = 'go'; $('#x-go', b).textContent = 'PDF erstellen'; }
+      const { month: m, rows } = current();
+      const sheets = Math.max(1, Math.ceil(rows.length / FORM_ROWS));
+      const [yy, mm] = m.split('-').map(Number);
+      $('#x-sum', b).innerHTML = rows.length
+        ? `<span><b>${rows.length} ${rows.length === 1 ? 'Zeile' : 'Zeilen'}</b> · ${fmtStd(rows.reduce((a, r) => a + r.min, 0))} Std. im ${MONTHS[mm - 1]} ${yy}</span>
+           ${sheets > 1 ? `<span class="small">Mehr als ${FORM_ROWS} Zeilen: Es entstehen ${sheets} Blätter in einer PDF (dann nicht mehr ausfüllbar). Tipp: „Pro Tag & Label“ fasst zusammen.</span>` : '<span class="small">Das PDF bleibt ausfüllbar.</span>'}`
+        : `Keine Einträge im ${MONTHS[mm - 1]} ${yy} für diese Auswahl.`;
+      $('#x-go', b).disabled = !rows.length;
+    };
+    upd();
+    b.oninput = upd; b.onchange = upd;
+    b.onclick = async (ev) => {
+      const a = ev.target.closest('[data-s]'); if (!a) return;
+      const act = a.dataset.s;
+      if (act === 'lbl') { sel.has(a.dataset.id) ? sel.delete(a.dataset.id) : sel.add(a.dataset.id); a.setAttribute('aria-pressed', sel.has(a.dataset.id)); }
+      if (act === 'all' || act === 'none') { labels.forEach((l) => (act === 'all' ? sel.add(l.id) : sel.delete(l.id))); b.querySelectorAll('[data-s="lbl"]').forEach((x) => x.setAttribute('aria-pressed', act === 'all')); }
+      if (act === 'grp') { group = a.dataset.v; b.querySelectorAll('[data-s="grp"]').forEach((x) => x.setAttribute('aria-pressed', x.dataset.v === group)); }
+      if (act === 'cancel') return closeSheet();
+      if (act === 'share' && ready) { shareOrDownload(ready.name, ready.bytes, 'application/pdf'); return; }
+      if (act === 'go') {
+        const { month: m, rows } = current();
+        if (!rows.length) return;
+        const teacher = $('#x-teacher', b).value.trim();
+        if (teacher !== (S.teacher || '')) S.teacher = teacher;
+        S.exportPrefs = { labels: [...sel], group, factor: $('#x-factor', b).checked };
+        save();
+        const btn = $('#x-go', b); btn.disabled = true; btn.textContent = 'Erstelle PDF …';
+        try {
+          const bytes = await buildVerrechnungPdf({ month: m, rows, teacher, remark: $('#x-remark', b).value });
+          // Teilen braucht auf dem iPhone einen frischen Fingertipp – daher ein eigener Knopf
+          ready = { name: `Verrechnungsstunden_${m}${teacher ? '_' + teacher.replace(/[^\wäöüÄÖÜß-]+/g, '_') : ''}.pdf`, bytes };
+          $('#x-sum', b).innerHTML = '<b>PDF ist fertig.</b><span class="small">Jetzt teilen oder speichern, z. B. in Dateien, OneDrive oder per Mail.</span>';
+          btn.disabled = false; btn.textContent = 'PDF teilen / speichern'; btn.dataset.s = 'share';
+        } catch (e) {
+          btn.disabled = false; btn.textContent = 'PDF erstellen';
+          toast('PDF konnte nicht erstellt werden: ' + (e.message || e));
+        }
+        return;
+      }
+      upd();
+    };
+  });
+}
+
 /* ---------- Export / Import ---------- */
 async function shareOrDownload(name, text, type) {
   try {
@@ -1588,6 +1781,7 @@ const actions = {
   fillWeek: (a) => fillSheet(a.dataset.from, a.dataset.to),
   fillRange: () => fillSheet(),
   bulkDelete: (a) => bulkDeleteSheet(a.dataset.from, a.dataset.to),
+  verrechnung: () => verrechnungSheet(),
   planDay: (a) => { ui.planDay = +a.dataset.d; render(); },
   newSlot: () => slotSheet(null),
   editSlot: (a) => slotSheet(S.slots.find((s) => s.id === a.dataset.id)),

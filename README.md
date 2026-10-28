@@ -12,6 +12,7 @@ Adresse nach dem Veröffentlichen: **https://cerebros-cyber.github.io/Zeiterfass
 - **Löschen nach Zeitraum**: Unter „Einträge“ → „Löschen …“ alle Einträge eines Zeitraums löschen – wahlweise nur bestimmte Labels und nur Stundenplan- oder eigene Einträge, mit Rückgängig.
 - **Labels**: Unterricht, Vertretung, Unterrichtsvor- und Nachbereitung, Korrekturen, Exkursionen – plus eigene mit Farbe.
 - **Auswertung**: Woche, Monat, Schuljahr oder freier Zeitraum, Labels frei wählbar; Summe, Durchschnitte, Diagramm, Aufteilung nach Label, Faktor-Anteil, Unterrichtsstunden à 45 min; CSV-Export.
+- **Verrechnungsstunden (PDF)**: Unter „Auswertung“ → „Verrechnungsstunden als PDF …“ Monat und Kategorien (Labels) wählen; die App füllt das Schulformular `vorlagen/verrechnungsstunden.pdf` aus (Lehrkraft, Schuljahr, Monat, Datum, Kategorie, Anlass, von/bis, Dauer, anrechenbar, Summen). Bis 15 Zeilen bleibt das PDF ausfüllbar; bei mehr Zeilen entstehen mehrere feste Blätter. Optional „Pro Tag & Label“ zusammenfassen und Faktor einrechnen. PDF-Erzeugung mit [pdf-lib](https://pdf-lib.js.org) (MIT, `vendor/`).
 - **Speicher**: lokal im Browser, optional **Abgleich über OneDrive** (Datei `Apps/<App-Name>/zeiterfassung.json`). Zusätzlich Sicherung als Datei (z. B. in iCloud Drive).
 
 ## Auf dem Handy installieren

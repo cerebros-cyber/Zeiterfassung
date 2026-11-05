@@ -144,6 +144,7 @@ p { margin: 0; }
 }
 .chip[aria-pressed="true"] { border-color: var(--fg); background: var(--fg); color: var(--bg); }
 .chip[aria-pressed="true"] .dot { box-shadow: 0 0 0 2px var(--bg); }
+.chip-sep { flex-basis: 100%; height: 0; border-top: 1px dashed var(--line); margin: 2px 0; }
 .chip.add { border-style: dashed; color: var(--fg-2); padding-left: 14px; }
 
 /* Buttons */
@@ -368,13 +369,22 @@ const STORE_KEY = 'lehrkraft-zeiterfassung-v1';
 const ONEDRIVE_CLIENT_ID = '';
 const DEFAULT_FACTOR = 1.6;
 
+/* Vorgegebene Labels = Kategorien der Verrechnungsstunden (Rückseite des Schulformulars) */
 const PRESET_LABELS = [
-  { id: 'unterricht',   name: 'Unterricht',                         color: '#2a78d6' },
-  { id: 'vertretung',   name: 'Vertretung',                         color: '#eb6834' },
-  { id: 'vorbereitung', name: 'Unterrichtsvor- und Nachbereitung',  color: '#1baf7a' },
-  { id: 'korrekturen',  name: 'Korrekturen',                        color: '#eda100' },
-  { id: 'exkursionen',  name: 'Exkursionen',                        color: '#e87ba4' },
+  { id: 'arbeitsgemeinschaften', name: 'Arbeitsgemeinschaften',               color: '#2a78d6' },
+  { id: 'aufsichten',            name: 'Aufsichten',                          color: '#eb6834' },
+  { id: 'besondere-aufgaben',    name: 'Besondere Aufgaben',                  color: '#1baf7a' },
+  { id: 'elternsprechtag',       name: 'Elternsprechtag',                     color: '#eda100' },
+  { id: 'exkursionen',           name: 'Exkursionen',                         color: '#e87ba4' },
+  { id: 'fachbereichsarbeit',    name: 'Fachbereichsarbeit',                  color: '#008300' },
+  { id: 'fortbildungen',         name: 'Fortbildungen',                       color: '#6250d6' },
+  { id: 'klassenkonferenzen',    name: 'Klassenkonferenzen',                  color: '#e34948' },
+  { id: 'schulfahrten',          name: 'Schulfahrten',                        color: '#5d6f7d' },
+  { id: 'schulveranstaltungen',  name: 'Schulveranstaltungen',                color: '#9a6a3a' },
+  { id: 'team-events',           name: 'Team-Events',                         color: '#0f8fa3' },
+  { id: 'vorbereitung-schulveranstaltungen', name: 'Vorbereitungen Schulveranstaltungen', color: '#b04fc0' },
 ];
+const PRESET_IDS = new Set(PRESET_LABELS.map((l) => l.id));
 const LABEL_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948', '#5d6f7d', '#9a6a3a', '#0f8fa3', '#b04fc0'];
 
 const STATES = {
@@ -444,7 +454,7 @@ function defaults() {
     labels: PRESET_LABELS.map((l) => ({ ...l, preset: true, hidden: false })),
     entries: [],
     running: null,
-    lastLabel: 'unterricht',
+    lastLabel: '',
     slots: [],
     periods: DEFAULT_PERIODS.map((p) => ({ ...p })),
     plan: { auto: false, from: '' },
@@ -517,6 +527,20 @@ function save() {
 }
 S = load();
 takeSnap();
+/* Frühere Vorgaben (Unterricht, Vertretung, …): benutzte bleiben als eigene Labels erhalten,
+   unbenutzte werden entfernt. Läuft nach takeSnap(), damit das Entfernen auch abgeglichen wird. */
+(function migrateLabels() {
+  const used = new Set([...S.entries.map((e) => e.labelId), ...S.slots.map((x) => x.labelId), S.running?.labelId]);
+  let changed = false;
+  S.labels = S.labels.filter((l) => {
+    if (!l.preset || PRESET_IDS.has(l.id)) return true;
+    changed = true;
+    if (used.has(l.id)) { l.preset = false; return true; }
+    return false;
+  });
+  for (const l of S.labels) if (PRESET_IDS.has(l.id) && !l.preset) { l.preset = true; changed = true; }
+  if (changed) { stamp(); persist(); }
+})();
 
 /* Faktor: angerechnete Zeit eines Eintrags */
 const factorVal = () => (S.factor > 0 ? S.factor : DEFAULT_FACTOR);
@@ -525,11 +549,27 @@ const cnt = (e) => dur(e) * (e.f ? factorVal() : 1);
 
 /* ---------- Labels ---------- */
 const labelById = (id) => S.labels.find((l) => l.id === id) || { id, name: 'Unbekannt', color: '#8a8a8a' };
-const visibleLabels = () => S.labels.filter((l) => !l.hidden);
+/* Reihenfolge: die fünf meistgenutzten Labels zuerst, danach alle übrigen alphabetisch */
+const TOP_LABELS = 5;
+function sortLabels(list) {
+  const count = new Map();
+  for (const e of S.entries) count.set(e.labelId, (count.get(e.labelId) || 0) + 1);
+  const top = list.filter((l) => count.get(l.id)).sort((a, b) => count.get(b.id) - count.get(a.id) || a.name.localeCompare(b.name, 'de')).slice(0, TOP_LABELS);
+  const topIds = new Set(top.map((l) => l.id));
+  const rest = list.filter((l) => !topIds.has(l.id)).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  return { top, rest, all: [...top, ...rest] };
+}
+const visibleLabels = () => sortLabels(S.labels.filter((l) => !l.hidden)).all;
+const defaultLabelId = () => (S.labels.some((l) => l.id === S.lastLabel && !l.hidden) ? S.lastLabel : visibleLabels()[0]?.id || '');
+/* Chips mit Trennlinie zwischen „häufig“ und dem Rest */
+function chipsHtml(list, chip) {
+  const { top, rest } = sortLabels(list);
+  return top.map(chip).join('') + (top.length && rest.length ? '<span class="chip-sep" aria-hidden="true"></span>' : '') + rest.map(chip).join('');
+}
 function labelChips(selected, attr = 'data-a="pickLabel"', withAdd = true) {
-  return `<div class="chips" role="group" aria-label="Label">${visibleLabels().map((l) => `
+  return `<div class="chips" role="group" aria-label="Label">${chipsHtml(S.labels.filter((l) => !l.hidden), (l) => `
     <button type="button" class="chip" ${attr} data-id="${esc(l.id)}" aria-pressed="${l.id === selected}">
-      <span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`).join('')}
+      <span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`)}
     ${withAdd ? `<button type="button" class="chip add" data-a="newLabel">${'+ Label'}</button>` : ''}</div>`;
 }
 
@@ -665,7 +705,7 @@ function undoCreate(ids) {
 const ui = {
   tab: 'heute',
   startDirty: false, endDirty: false, startVal: '', endVal: '',
-  timerLabel: S.lastLabel || 'unterricht',
+  timerLabel: defaultLabelId(),
   timerF: false,
   weekOff: 0,
   planDay: Math.min(Math.max(wd(today()), 1), 5),
@@ -720,6 +760,8 @@ function viewHeute() {
   const todays = entriesOn(t);
   const mon = monday(t);
   const week = S.entries.filter((e) => e.date >= mon && e.date <= addDays(mon, 6));
+  const monthList = S.entries.filter((e) => e.date.slice(0, 7) === t.slice(0, 7));
+  if (!S.labels.some((l) => l.id === ui.timerLabel && !l.hidden)) ui.timerLabel = defaultLabelId();
   let timer;
   if (!run) {
     timer = `<section class="timer" aria-label="Timer">
@@ -771,7 +813,7 @@ function viewHeute() {
     </section>
     <section class="stats">
       <div class="stat"><span class="eyebrow">Diese Woche</span><b>${fmtDur(sumMin(week))}</b><span class="muted small">${week.length} Einträge</span></div>
-      <div class="stat"><span class="eyebrow">Davon Unterricht</span><b>${fmtDur(sumMin(week.filter((e) => e.labelId === 'unterricht' || e.labelId === 'vertretung')))}</b><span class="muted small">inkl. Vertretung</span></div>
+      <div class="stat"><span class="eyebrow">${MONTHS[pd(t).getMonth()]}</span><b>${fmtDur(sumMin(monthList))}</b><span class="muted small">${monthList.length} Einträge</span></div>
     </section>`;
 }
 function factorSwitch(id, on, attr) {
@@ -931,7 +973,7 @@ function viewAuswertung() {
   const r = ui.rep;
   const [from, to, title] = repRange();
   const usedIds = new Set(S.entries.map((e) => e.labelId));
-  const allLabels = S.labels.filter((l) => !l.hidden || usedIds.has(l.id));
+  const allLabels = sortLabels(S.labels.filter((l) => !l.hidden || usedIds.has(l.id))).all;
   const sel = r.labels ? new Set(r.labels) : new Set(allLabels.map((l) => l.id));
   const list = S.entries.filter((e) => e.date >= from && e.date <= to && sel.has(e.labelId));
   const total = sumMin(list);
@@ -985,7 +1027,7 @@ function viewAuswertung() {
     <section class="section">
       <div class="section-head"><h3>Labels</h3>
         <div class="row"><button class="linkbtn small" data-a="repAll">Alle</button><button class="linkbtn small" data-a="repNone">Keine</button></div></div>
-      <div class="chips">${allLabels.map((l) => `<button type="button" class="chip" data-a="repLabel" data-id="${esc(l.id)}" aria-pressed="${sel.has(l.id)}"><span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`).join('')}</div>
+      <div class="chips">${chipsHtml(allLabels, (l) => `<button type="button" class="chip" data-a="repLabel" data-id="${esc(l.id)}" aria-pressed="${sel.has(l.id)}"><span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`)}</div>
     </section>
     <section class="card">
       <div class="total"><span class="eyebrow">Arbeitszeit im Zeitraum</span><span class="big">${fmtDur(total)}</span>
@@ -1082,7 +1124,7 @@ function viewMehr() {
 
     <section class="card">
       <h2>Labels</h2>
-      <div class="list">${S.labels.map((l) => `
+      <div class="list">${sortLabels(S.labels).all.map((l) => `
         <div class="set-row ${l.hidden ? 'hidden-label' : ''}"><span class="dot" style="background:${esc(l.color)};width:14px;height:14px"></span>
           <span class="name">${esc(l.name)}${l.preset ? ' <span class="muted small">· vorgegeben</span>' : ''}</span>
           <button class="btn sm ghost" data-a="editLabel" data-id="${esc(l.id)}">Bearbeiten</button></div>`).join('')}</div>
@@ -1146,7 +1188,7 @@ function entrySheet(entry, date) {
   const nm = roundDown5(nowMin());
   const e = entry ? { ...entry } : {
     date: date || today(), start: fromMin(nm - 60), end: fromMin(nm),
-    labelId: S.lastLabel || 'unterricht', note: '', source: 'manual', f: false,
+    labelId: defaultLabelId(), note: '', source: 'manual', f: false,
   };
   if (!S.labels.some((l) => l.id === e.labelId && !l.hidden) && isNew) e.labelId = visibleLabels()[0]?.id;
   const html = () => `
@@ -1214,7 +1256,7 @@ function deleteEntry(id) {
 /* Stundenplan-Stunde */
 function slotSheet(slot) {
   const isNew = !slot;
-  const s = slot ? { ...slot } : { wd: ui.planDay, start: S.periods[0]?.start || '08:00', end: S.periods[0]?.end || '08:45', pFrom: 0, pTo: 0, labelId: 'unterricht', title: '', validFrom: '', validTo: '', f: false };
+  const s = slot ? { ...slot } : { wd: ui.planDay, start: S.periods[0]?.start || '08:00', end: S.periods[0]?.end || '08:45', pFrom: 0, pTo: 0, labelId: defaultLabelId(), title: '', validFrom: '', validTo: '', f: false };
   const days = new Set([s.wd]);
   const perOpts = (sel) => `<option value="">frei</option>` + S.periods.map((p, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${i + 1}. (${p.start}–${p.end})</option>`).join('');
   openSheet(`
@@ -1344,7 +1386,7 @@ function bulkDeleteSheet(from, to) {
   const mon = monday(today());
   from = from || mon; to = to || addDays(mon, 6);
   const used = new Set(S.entries.map((e) => e.labelId));
-  const labels = S.labels.filter((l) => !l.hidden || used.has(l.id));
+  const labels = sortLabels(S.labels.filter((l) => !l.hidden || used.has(l.id))).all;
   const sel = new Set(labels.map((l) => l.id));
   let src = 'all';
   openSheet(`
@@ -1359,7 +1401,7 @@ function bulkDeleteSheet(from, to) {
     <div class="stack">
       <div class="section-head"><span class="tf-label">Labels</span>
         <div class="row"><button type="button" class="linkbtn small" data-s="all">Alle</button><button type="button" class="linkbtn small" data-s="none">Keine</button></div></div>
-      <div class="chips">${labels.map((l) => `<button type="button" class="chip" data-s="lbl" data-id="${esc(l.id)}" aria-pressed="true"><span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`).join('')}</div></div>
+      <div class="chips">${chipsHtml(labels, (l) => `<button type="button" class="chip" data-s="lbl" data-id="${esc(l.id)}" aria-pressed="true"><span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`)}</div></div>
     <div class="stack"><span class="tf-label">Herkunft</span>
       <div class="seg" id="d-src">
         <button type="button" data-s="src" data-v="all" aria-pressed="true">Alle</button>
@@ -1485,10 +1527,18 @@ function freeSheet() {
 }
 
 
-/* ---------- Export: Formular „Verrechnungsstunden“ (ausfüllbares PDF der Schule) ---------- */
-const FORM_ROWS = 15;
-// App-Label → Eintrag in der Kategorie-Liste des Formulars (sonst wird der Label-Name eingetragen)
-const FORM_CATEGORY = { exkursionen: 'Schulfahrt / Exkursion', vertretung: 'Vertretung / Aufsicht' };
+/* ---------- Export: Formular „Verrechnungsstunden“ der Schule ----------
+   Vorlage: vorlagen/verrechnungsstunden.pdf (Scan, Seite 1 = Vorderseite, Seite 2 = Rückseite mit den Regeln).
+   Pro Vorgang eine Vorderseite, jeweils gefolgt von der Rückseite. Die Einträge liegen als
+   ausfüllbare Felder über dem Scan, damit sich alles (auch „Bemerkungen“) im PDF noch ändern lässt. */
+const PX = (v) => v * 0.24;                 // 300-dpi-Scan → PDF-Punkte
+const PAGE_H = 841.92;
+// Feldpositionen in Scan-Pixeln (links, oben, rechts, unten)
+const FORM_LAYOUT = {
+  lehrkraft: [586, 972, 1150, 1036], schuljahr: [1462, 972, 1700, 1036], monat: [1933, 972, 2330, 1036],
+  rows: [1238, 1383, 1528, 1672, 1817, 1961], valueX: [1066, 2186],
+  bemerkung: [330, 2330, 2195, 2635],
+};
 let pdfLibPromise = null;
 function loadPdfLib() {
   if (window.PDFLib) return Promise.resolve(window.PDFLib);
@@ -1511,85 +1561,99 @@ function schoolYearOf(month) {   // "2026-10" → "2026/27"
   const a = m >= 8 ? y : y - 1;
   return `${a}/${String(a + 1).slice(2)}`;
 }
-function verrechnungRows(month, labelIds, group, useFactor) {
+/* Vorgänge eines Monats: ein Eintrag = ein Vorgang, oder zusammengefasst pro Tag und Label */
+function verrechnungVorgaenge(month, labelIds, group, useFactor) {
   const sel = new Set(labelIds);
   const list = S.entries.filter((e) => e.date.slice(0, 7) === month && sel.has(e.labelId))
     .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
-  const minutes = (e) => (useFactor ? cnt(e) : dur(e));
-  const rows = [];
-  if (group === 'day') {
-    const map = new Map();
-    for (const e of list) {
-      const k = e.date + '|' + e.labelId;
-      if (!map.has(k)) { map.set(k, { date: e.date, labelId: e.labelId, start: e.start, end: e.end, min: 0, notes: [], f: false }); rows.push(map.get(k)); }
-      const r = map.get(k);
-      r.min += minutes(e);
-      if (e.start < r.start) r.start = e.start;
-      if (e.end > r.end) r.end = e.end;
-      if (e.note && !r.notes.includes(e.note)) r.notes.push(e.note);
-      if (useFactor && e.f) r.f = true;
-    }
-  } else {
-    for (const e of list) rows.push({ date: e.date, labelId: e.labelId, start: e.start, end: e.end, min: minutes(e), notes: e.note ? [e.note] : [], f: useFactor && !!e.f });
+  const out = [];
+  const byKey = new Map();
+  for (const e of list) {
+    const k = group === 'day' ? e.date + '|' + e.labelId : e.id;
+    if (!byKey.has(k)) { const v = { date: e.date, labelId: e.labelId, parts: [], notes: [], raw: 0, min: 0, factor: false }; byKey.set(k, v); out.push(v); }
+    const v = byKey.get(k);
+    v.parts.push(`${e.start}–${e.end}`);
+    if (e.note && !v.notes.includes(e.note)) v.notes.push(e.note);
+    v.raw += dur(e);
+    v.min += useFactor ? cnt(e) : dur(e);
+    if (useFactor && e.f) v.factor = true;
   }
-  return rows.map((r) => {
-    const l = labelById(r.labelId);
-    let was = r.notes.join('; ') || l.name;
-    if (r.f) was += ` (Faktor ${fmtFactor()})`;
-    return { datum: fmtDate(r.date), kat: FORM_CATEGORY[r.labelId] || l.name, was, von: r.start, bis: r.end, min: r.min };
+  return out.map((v) => {
+    const l = labelById(v.labelId);
+    const umfang = `${v.parts.join(', ')} Uhr (${fmtStd(v.raw)} Std.${v.factor ? ` · mit Faktor ${fmtFactor()}: ${fmtStd(v.min)} Std.` : ''})`;
+    return {
+      was: l.name + (v.notes.length ? ' – ' + v.notes.join('; ') : ''),
+      wann: `${WD_SHORT[wd(v.date)]}, ${fmtDate(v.date)}`,
+      umfang,
+      reise: v.labelId === 'schulfahrten' && v.parts.length === 1 ? `Abreise ${v.parts[0].split('–')[0]} Uhr · Ankunft ${v.parts[0].split('–')[1]} Uhr` : '',
+      min: v.min,
+    };
   });
 }
-async function buildVerrechnungPdf({ month, rows, teacher, remark }) {
+async function buildVerrechnungPdf({ month, vorgaenge, teacher }) {
   const PDFLib = await loadPdfLib();
   const res = await fetch('vorlagen/verrechnungsstunden.pdf');
   if (!res.ok) throw new Error('Formular-Vorlage nicht gefunden');
-  const tpl = await res.arrayBuffer();
+  const tplBytes = await res.arrayBuffer();
   const [y, m] = month.split('-').map(Number);
-  const chunks = [];
-  for (let i = 0; i < rows.length; i += FORM_ROWS) chunks.push(rows.slice(i, i + FORM_ROWS));
-  if (!chunks.length) chunks.push([]);
-  const totalMin = rows.reduce((a, r) => a + r.min, 0);
-  const docs = [];
-  for (let ci = 0; ci < chunks.length; ci++) {
-    const doc = await PDFLib.PDFDocument.load(tpl);
-    const helv = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
-    const form = doc.getForm();
-    // Text so setzen, dass er ins Feld passt (Schrift notfalls verkleinern)
-    const put = (name, text, max = 9) => {
-      const t = pdfText(text);
-      let f;
-      try { f = form.getField(name); } catch (e) { return; }
-      const w = f.acroField.getWidgets()[0].getRectangle().width - 4;
-      let size = max;
-      while (size > 5 && helv.widthOfTextAtSize(t, size) > w) size -= 0.5;
-      if (f instanceof PDFLib.PDFDropdown) { f.setFontSize(size); f.select(t || ' '); }
-      else { f.setFontSize(size); f.setText(t); }
-    };
-    put('Lehrkraft', teacher, 11); put('Schuljahr', schoolYearOf(month), 11); put('Monat', `${MONTHS[m - 1]} ${y}`, 11);
-    let sum = 0;
-    chunks[ci].forEach((r, i) => {
-      const n = i + 1;
-      put('datum_' + n, r.datum); put('kat_' + n, r.kat); put('was_' + n, r.was);
-      put('von_' + n, r.von); put('bis_' + n, r.bis);
-      put('dauer_' + n, fmtStd(r.min)); put('netto_' + n, fmtStd(r.min));
-      sum += r.min;
-    });
-    put('summe_dauer', fmtStd(sum)); put('summe_netto', fmtStd(sum));
-    put('Bemerkung_1', remark);
-    if (chunks.length > 1) put('Bemerkung_2', `Blatt ${ci + 1} von ${chunks.length} · Gesamtsumme aller Blätter: ${fmtStd(totalMin)} Std.`);
-    if (chunks.length > 1) {
-      // Mehrere Blätter lassen sich nicht als ein Formular zusammenführen → feste Seiten erzeugen
-      for (const b of ['btn_loeschen_0', 'btn_speichern_0', 'btn_drucken_0']) { try { form.removeField(form.getButton(b)); } catch (e) { /* egal */ } }
-      form.updateFieldAppearances(helv);
-      form.flatten();
+  const doc = await PDFLib.PDFDocument.create();
+  doc.setTitle(`Verrechnungsstunden ${MONTHS[m - 1]} ${y}`);
+  const [front, back] = await doc.embedPdf(tplBytes, [0, 1]);   // Scan nur einmal einbetten
+  const helv = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
+  const form = doc.getForm();
+  const noFrame = { borderWidth: 0, backgroundColor: undefined, borderColor: undefined, textColor: PDFLib.rgb(0.05, 0.1, 0.35) };
+  const rect = ([l, t, r, b]) => ({ x: PX(l), y: PAGE_H - PX(b), width: PX(r - l), height: PX(b - t) });
+  // Größte Schrift wählen, bei der der Text (ggf. umbrochen) ins Feld passt
+  const fitSize = (text, w, h, max, multiline) => {
+    for (let size = max; size > 6; size -= 0.5) {
+      if (!multiline) { if (helv.widthOfTextAtSize(text, size) <= w - 4) return size; continue; }
+      let lines = 1, line = '';
+      for (const word of text.split(/\s+/)) {
+        const t = line ? line + ' ' + word : word;
+        if (helv.widthOfTextAtSize(t, size) > w - 6 && line) { lines++; line = word; } else line = t;
+      }
+      if (lines * size * 1.18 <= h - 4) return size;
     }
-    docs.push(doc);
-  }
-  if (docs.length === 1) return docs[0].save();
-  const out = await PDFLib.PDFDocument.create();
-  for (const d of docs) { const [pg] = await out.copyPages(d, [0]); out.addPage(pg); }
-  out.setTitle('Verrechnungsstunden – Neues Gymnasium Glienicke');
-  return out.save();
+    return 6;
+  };
+  const field = (name, text, r, page, { multiline = false, max = 11 } = {}) => {
+    const f = form.createTextField(name);
+    const t = pdfText(text);
+    // Nur umbrechen, wenn der Text nicht in eine Zeile passt (einzeilig wird vertikal zentriert)
+    if (multiline === 'auto') multiline = helv.widthOfTextAtSize(t, max) > PX(r[2] - r[0]) - 4;
+    if (multiline) f.enableMultiline();
+    f.addToPage(page, { ...rect(r), ...noFrame, font: helv });
+    f.setText(t);
+    f.setFontSize(t ? fitSize(t, PX(r[2] - r[0]), PX(r[3] - r[1]), max, multiline) : max);
+    return f;
+  };
+  // Kopffelder gibt es nur einmal; jede Vorderseite zeigt sie (Änderung wirkt auf allen Seiten)
+  const head = {};
+  const headField = (key, text, page) => {
+    const first = !head[key];
+    if (first) { head[key] = form.createTextField(key); head[key].setText(pdfText(text)); }
+    head[key].addToPage(page, { ...rect(FORM_LAYOUT[key]), ...noFrame, font: helv });
+    // Schriftgröße geht erst, wenn das Feld auf einer Seite liegt
+    if (first) { const r = FORM_LAYOUT[key]; head[key].setFontSize(fitSize(pdfText(text), PX(r[2] - r[0]), PX(r[3] - r[1]), 12, false)); }
+  };
+  const L = FORM_LAYOUT, [vx1, vx2] = L.valueX;
+  vorgaenge.forEach((v, i) => {
+    const n = i + 1;
+    const p = doc.addPage([595.2, PAGE_H]);
+    p.drawPage(front, { x: 0, y: 0, width: 595.2, height: PAGE_H });
+    headField('lehrkraft', teacher, p); headField('schuljahr', schoolYearOf(month), p); headField('monat', `${MONTHS[m - 1]} ${y}`, p);
+    const row = (k) => [vx1, L.rows[k] + 4, vx2, L.rows[k + 1] - 4];
+    field(`was_${n}`, v.was, row(0), p, { multiline: 'auto' });
+    field(`wann_${n}`, v.wann, row(1), p);
+    field(`zeitumfang_${n}`, v.umfang, row(2), p, { multiline: 'auto' });
+    field(`gegenzurechnen_${n}`, '', row(3), p);
+    field(`abreise_ankunft_${n}`, v.reise, row(4), p, { multiline: 'auto' });
+    field(`bemerkungen_${n}`, '', L.bemerkung, p, { multiline: true, max: 12 });
+    const bp = doc.addPage([595.2, PAGE_H]);
+    bp.drawPage(back, { x: 0, y: 0, width: 595.2, height: PAGE_H });
+  });
+  form.updateFieldAppearances(helv);
+  return doc.save();
 }
 function verrechnungSheet() {
   const t = today();
@@ -1598,14 +1662,14 @@ function verrechnungSheet() {
   if (r.mode === 'month') { const [from] = repRange(); month = from.slice(0, 7); }
   const prefs = S.exportPrefs || {};
   const used = new Set(S.entries.map((e) => e.labelId));
-  const labels = S.labels.filter((l) => !l.hidden || used.has(l.id));
-  const sel = new Set(prefs.labels ? prefs.labels.filter((id) => labels.some((l) => l.id === id)) : labels.filter((l) => l.id !== 'unterricht').map((l) => l.id));
+  const labels = sortLabels(S.labels.filter((l) => !l.hidden || used.has(l.id))).all;
+  const sel = new Set(prefs.labels ? prefs.labels.filter((id) => labels.some((l) => l.id === id)) : labels.map((l) => l.id));
   let group = prefs.group || 'single';
   let ready = null;
   openSheet(`
     <p class="eyebrow">Export</p>
     <h2 id="sheet-title">Verrechnungsstunden (PDF)</h2>
-    <p class="muted small">Füllt das Formular „Verrechnungsstunden“ für einen Monat aus. Gegenzurechnende Zeiten trägst du bei Bedarf danach im PDF ein.</p>
+    <p class="muted small">Füllt das Schulformular aus: eine Vorderseite pro Vorgang, jeweils mit Rückseite. Bemerkungen, gegenzurechnende Zeiten und alle anderen Felder kannst du im PDF noch ändern.</p>
     <div class="grid2">
       <label class="f" for="x-month">Monat<input type="month" id="x-month" value="${month}"></label>
       <label class="f" for="x-teacher">Lehrkraft<input type="text" id="x-teacher" value="${esc(S.teacher || '')}" placeholder="Vor- und Nachname" autocomplete="name"></label>
@@ -1613,30 +1677,29 @@ function verrechnungSheet() {
     <div class="stack">
       <div class="section-head"><span class="tf-label">Kategorien (Labels)</span>
         <div class="row"><button type="button" class="linkbtn small" data-s="all">Alle</button><button type="button" class="linkbtn small" data-s="none">Keine</button></div></div>
-      <div class="chips">${labels.map((l) => `<button type="button" class="chip" data-s="lbl" data-id="${esc(l.id)}" aria-pressed="${sel.has(l.id)}"><span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`).join('')}</div></div>
-    <div class="stack"><span class="tf-label">Zeilen</span>
+      <div class="chips">${chipsHtml(labels, (l) => `<button type="button" class="chip" data-s="lbl" data-id="${esc(l.id)}" aria-pressed="${sel.has(l.id)}"><span class="dot" style="background:${esc(l.color)}"></span><span>${esc(l.name)}</span></button>`)}</div></div>
+    <div class="stack"><span class="tf-label">Vorgänge</span>
       <div class="seg">
         <button type="button" data-s="grp" data-v="single" aria-pressed="${group === 'single'}">Jeder Eintrag</button>
         <button type="button" data-s="grp" data-v="day" aria-pressed="${group === 'day'}">Pro Tag & Label</button></div></div>
-    <label class="switch" for="x-factor"><span><b>Faktor ${fmtFactor()} einrechnen</b><br><span class="muted small">Bei Einträgen mit gesetztem Faktor-Haken</span></span>
+    <label class="switch" for="x-factor"><span><b>Faktor ${fmtFactor()} angeben</b><br><span class="muted small">Bei Einträgen mit gesetztem Faktor-Haken</span></span>
       <input type="checkbox" id="x-factor" ${prefs.factor === false ? '' : 'checked'}></label>
-    <label class="f" for="x-remark"><span>Bemerkung <span class="muted">(optional)</span></span><input type="text" id="x-remark" autocomplete="off"></label>
     <div class="banner info" id="x-sum"></div>
     <div class="sheet-actions"><button class="btn" data-s="cancel">Abbrechen</button><button class="btn primary" data-s="go" id="x-go">PDF erstellen</button></div>`, (b) => {
     const current = () => {
       const m = $('#x-month', b).value || month;
-      return { month: m, rows: verrechnungRows(m, [...sel], group, $('#x-factor', b).checked) };
+      return { month: m, vorgaenge: verrechnungVorgaenge(m, [...sel], group, $('#x-factor', b).checked) };
     };
     const upd = () => {
       if (ready) { ready = null; $('#x-go', b).dataset.s = 'go'; $('#x-go', b).textContent = 'PDF erstellen'; }
-      const { month: m, rows } = current();
-      const sheets = Math.max(1, Math.ceil(rows.length / FORM_ROWS));
+      const { month: m, vorgaenge } = current();
       const [yy, mm] = m.split('-').map(Number);
-      $('#x-sum', b).innerHTML = rows.length
-        ? `<span><b>${rows.length} ${rows.length === 1 ? 'Zeile' : 'Zeilen'}</b> · ${fmtStd(rows.reduce((a, r) => a + r.min, 0))} Std. im ${MONTHS[mm - 1]} ${yy}</span>
-           ${sheets > 1 ? `<span class="small">Mehr als ${FORM_ROWS} Zeilen: Es entstehen ${sheets} Blätter in einer PDF (dann nicht mehr ausfüllbar). Tipp: „Pro Tag & Label“ fasst zusammen.</span>` : '<span class="small">Das PDF bleibt ausfüllbar.</span>'}`
+      const n = vorgaenge.length;
+      $('#x-sum', b).innerHTML = n
+        ? `<span><b>${n} ${n === 1 ? 'Vorgang' : 'Vorgänge'}</b> · ${fmtStd(vorgaenge.reduce((a, v) => a + v.min, 0))} Std. im ${MONTHS[mm - 1]} ${yy}</span>
+           <span class="small">${2 * n} Seiten (${n}× Vorderseite mit Rückseite) – zum beidseitigen Drucken.</span>`
         : `Keine Einträge im ${MONTHS[mm - 1]} ${yy} für diese Auswahl.`;
-      $('#x-go', b).disabled = !rows.length;
+      $('#x-go', b).disabled = !n;
     };
     upd();
     b.oninput = upd; b.onchange = upd;
@@ -1649,15 +1712,15 @@ function verrechnungSheet() {
       if (act === 'cancel') return closeSheet();
       if (act === 'share' && ready) { shareOrDownload(ready.name, ready.bytes, 'application/pdf'); return; }
       if (act === 'go') {
-        const { month: m, rows } = current();
-        if (!rows.length) return;
+        const { month: m, vorgaenge } = current();
+        if (!vorgaenge.length) return;
         const teacher = $('#x-teacher', b).value.trim();
         if (teacher !== (S.teacher || '')) S.teacher = teacher;
         S.exportPrefs = { labels: [...sel], group, factor: $('#x-factor', b).checked };
         save();
         const btn = $('#x-go', b); btn.disabled = true; btn.textContent = 'Erstelle PDF …';
         try {
-          const bytes = await buildVerrechnungPdf({ month: m, rows, teacher, remark: $('#x-remark', b).value });
+          const bytes = await buildVerrechnungPdf({ month: m, vorgaenge, teacher });
           // Teilen braucht auf dem iPhone einen frischen Fingertipp – daher ein eigener Knopf
           ready = { name: `Verrechnungsstunden_${m}${teacher ? '_' + teacher.replace(/[^\wäöüÄÖÜß-]+/g, '_') : ''}.pdf`, bytes };
           $('#x-sum', b).innerHTML = '<b>PDF ist fertig.</b><span class="small">Jetzt teilen oder speichern, z. B. in Dateien, OneDrive oder per Mail.</span>';

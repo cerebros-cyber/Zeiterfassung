@@ -1891,6 +1891,7 @@ const actions = {
   dismissOnboarding: () => { S.onboarded = true; save(); render(); },
   msConnect: () => msConnect(),
   msDisconnect: () => msDisconnect(),
+  copyClientId: () => copyText(clientId(), 'Client-ID'),
   syncNow: () => { SY.err = ''; Sync.now(); },
 };
 
@@ -2133,6 +2134,7 @@ function storageCard() {
       <div class="stack" style="margin-top:10px">
         <label class="f" for="set-client">Client-ID (Anwendungs-ID)
           <input type="text" id="set-client" data-c="clientId" value="${esc(SY.clientId || '')}" placeholder="${ONEDRIVE_CLIENT_ID ? 'fest eingebaut' : '00000000-0000-0000-0000-000000000000'}" autocomplete="off" spellcheck="false" ${ONEDRIVE_CLIENT_ID ? 'disabled' : ''}></label>
+        ${cid ? '<button type="button" class="btn sm" data-a="copyClientId">Client-ID kopieren (für weitere Geräte)</button>' : ''}
         <p class="muted small">Umleitungs-URI für die Registrierung (Plattform „Single-Page-Anwendung“):<br><code style="word-break:break-all">${esc(redirectUri())}</code></p>
       </div></details>
   </section>`;
@@ -2143,9 +2145,11 @@ function setupSheet() {
   openSheet(`
     <p class="eyebrow">OneDrive einrichten · einmalig</p>
     <h2 id="sheet-title">App bei Microsoft registrieren</h2>
-    <p class="muted small">Damit die App auf dein OneDrive zugreifen darf, braucht sie eine kostenlose Registrierung bei Microsoft. Am einfachsten am Computer:</p>
+    <div class="banner info"><b>Schon auf einem anderen Gerät verbunden?</b><span class="small">Dann ist keine neue Registrierung nötig. Auf dem anderen Gerät unter „Mehr → Speicherort & Abgleich → Erweitert“ auf „Client-ID kopieren“ tippen, die ID z. B. per Nachricht an dich selbst schicken und unten einfügen.</span></div>
+    <p class="muted small">Nur beim allerersten Mal: Damit die App auf dein OneDrive zugreifen darf, braucht sie eine kostenlose Registrierung bei Microsoft. Am einfachsten am Computer:</p>
     <ol class="steps">
       <li><div><a href="https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/CreateApplicationBlade" target="_blank" rel="noopener"><b>entra.microsoft.com</b></a> öffnen und mit deinem Microsoft-Konto anmelden → <b>App-Registrierungen</b> → <b>Neue Registrierung</b>.</div></li>
+      <li><div>Meldet die Seite mit einem privaten Microsoft-Konto den Fehler <b>AADSTS16000</b>, fehlt dem Konto ein eigenes Verzeichnis. Das entsteht mit einem kostenlosen Azure-Konto (azure.microsoft.com/free); danach klappt die Anmeldung.</div></li>
       <li><div>Name: <b>NGG Zeiterfassung</b>. Unterstützte Kontotypen: <b>„Konten in einem beliebigen Organisationsverzeichnis und persönliche Microsoft-Konten“</b>.</div></li>
       <li><div>Umleitungs-URI: Plattform <b>„Single-Page-Anwendung (SPA)“</b> wählen und diese Adresse eintragen:
         <code style="display:block;word-break:break-all;margin-top:6px;padding:8px;background:var(--surface-2);border-radius:8px">${esc(uri)}</code>

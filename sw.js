@@ -1,6 +1,6 @@
 // Service Worker der Zeiterfassung: hält die App offline verfügbar.
 // Bei Änderungen an den Dateien VERSION erhöhen.
-const VERSION = 'zeiterfassung-v7';
+const VERSION = 'zeiterfassung-v8';
 const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icons/logo-128.png', 'icons/favicon-64.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png', 'vendor/pdf-lib.min.js', 'vorlagen/verrechnungsstunden.pdf'];
 
 self.addEventListener('install', (e) => {
